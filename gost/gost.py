@@ -7,7 +7,10 @@ import struct
 
 image_path = 'image.png'
 
-def encrypt_image(input_image_path, output_image_path, key, iv):
+key = os.urandom(24)
+iv = os.urandom(8)
+
+def encrypt_image(input_image_path, key, iv):
     image = Image.open(input_image_path)
     image_data = np.array(image)
 
@@ -17,34 +20,30 @@ def encrypt_image(input_image_path, output_image_path, key, iv):
 
     padded_data = pad(byte_data, DES3.block_size)
     encrypted_data = cipher.encrypt(padded_data)
-
-    with open(output_image_path, 'wb') as f:
-        f.write(struct.pack('ii', image.size[0], image.size[1]))
-        f.write(cipher.iv)
-        f.write(encrypted_data)
+    
     img_enc = Image.fromarray(np.frombuffer(encrypted_data[:277**2], dtype=np.uint8).reshape((277, 277)))
     img_enc.save('encrypted_image.png')
 
-def decrypt_image(input_image_path, output_image_path, key):
-    with open(input_image_path, 'rb') as f:
-        width, height = struct.unpack('ii', f.read(8))
-        iv = f.read(8)
-        encrypted_data = f.read()
+    output_data = struct.pack('ii', image.size[0], image.size[1]) + cipher.iv + encrypted_data
+    return output_data
+
+def decrypt_image(encrypted_data, key):
+    width, height = struct.unpack('ii', encrypted_data[:8])
+    iv = encrypted_data[8:16]
+    encrypted_content = encrypted_data[16:]
 
     cipher = DES3.new(key, DES3.MODE_CBC, iv)
 
-    decrypted_data = unpad(cipher.decrypt(encrypted_data), DES3.block_size)
+    decrypted_data = unpad(cipher.decrypt(encrypted_content), DES3.block_size)
 
     image_data = np.frombuffer(decrypted_data, dtype=np.uint8)
-
     image_data = image_data.reshape((height, width, 3))
 
     decrypted_image = Image.fromarray(image_data)
-    decrypted_image.save(output_image_path)
+    return decrypted_image
 
-def calculate_metrics(original_image_path, decrypted_image_path):
+def calculate_metrics(original_image_path, decrypted_image):
     original_image = Image.open(original_image_path)
-    decrypted_image = Image.open(decrypted_image_path)
     original_data = np.array(original_image)
     decrypted_data = np.array(decrypted_image)
     
@@ -66,10 +65,9 @@ def calculate_metrics(original_image_path, decrypted_image_path):
     print(f"UACI: {uaci:.2f}%")
 
 if __name__ == "__main__":
-    key = os.urandom(24)
-    iv = os.urandom(8)
+    encrypted_data = encrypt_image(image_path, key, iv)
+    decrypted_image = decrypt_image(encrypted_data, key)
 
-    encrypt_image(image_path, 'encrypted_image.bin', key, iv)
-    decrypt_image('encrypted_image.bin', 'decrypted_image.png', key)
+    decrypted_image.save('decrypted_image.png')
 
-    calculate_metrics(image_path, 'decrypted_image.png')
+    calculate_metrics(image_path, decrypted_image)
